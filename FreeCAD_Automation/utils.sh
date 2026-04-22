@@ -13,9 +13,21 @@ FAIL=1
 TRUE=0
 FALSE=1
 
-CONFIG_FILE="FreeCAD_Automation/config.json"
-FCStdFileTool="FreeCAD_Automation/FCStdFileTool.py"
-PYTHON_EXEC="FreeCAD_Automation/python.sh"
+# Detect the FreeCAD_Automation directory relative to the git repo root
+# This allows the folder to be placed in any subdirectory within the repo
+if [ -z "$FREECAD_AUTO_REL_PATH" ]; then
+    # If FREECAD_AUTO_REL_PATH is not set as an environment variable, try to detect it from BASH_SOURCE
+    FREECAD_AUTO_REL_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    # Get path relative to git root
+    if GIT_COMMAND="rev-parse" git rev-parse --show-toplevel >/dev/null 2>&1; then
+        git_repo_root="$(GIT_COMMAND="rev-parse" git rev-parse --show-toplevel)"
+        FREECAD_AUTO_REL_PATH="$(realpath --relative-to="$git_repo_root" "$FREECAD_AUTO_REL_PATH" 2>/dev/null || echo "$FREECAD_AUTO_REL_PATH")"
+    fi
+fi
+
+CONFIG_FILE="$FREECAD_AUTO_REL_PATH/config.json"
+FCStdFileTool="$FREECAD_AUTO_REL_PATH/FCStdFileTool.py"
+PYTHON_EXEC="$FREECAD_AUTO_REL_PATH/python.sh"
 
 # ==============================================================================================
 #                                      Sourcing Only Check                                      

@@ -10,7 +10,16 @@
 #                               Verify and Retrieve Dependencies
 # ==============================================================================================
 # Import code used in this script
-FUNCTIONS_FILE="FreeCAD_Automation/utils.sh"
+if [ -z "$FREECAD_AUTO_REL_PATH" ]; then
+    git_repo_root="$(GIT_COMMAND="rev-parse" git rev-parse --show-toplevel 2>/dev/null)"
+    if [ -n "$git_repo_root" ]; then
+        FREECAD_AUTO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        FREECAD_AUTO_REL_PATH="$(realpath --relative-to="$git_repo_root" "$FREECAD_AUTO_DIR" 2>/dev/null || echo "FreeCAD_Automation")"
+    else
+        FREECAD_AUTO_REL_PATH="FreeCAD_Automation"
+    fi
+fi
+FUNCTIONS_FILE="${FREECAD_AUTO_REL_PATH:-FreeCAD_Automation}/utils.sh"
 source "$FUNCTIONS_FILE"
 
 if [ -z "$PYTHON_PATH" ]; then

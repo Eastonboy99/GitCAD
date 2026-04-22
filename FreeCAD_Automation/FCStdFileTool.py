@@ -48,7 +48,29 @@ from pathlib import PurePosixPath
 
 USER_RUNNING_LINUX_OS:bool = sys.platform.startswith('linux')
 
-CONFIG_PATH:str = 'FreeCAD_Automation/config.json'
+# Detect FreeCAD_Automation directory dynamically to support moving the folder to any subdirectory
+# Use script's directory as the base to ensure paths work regardless of current working directory
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+_freeCAD_auto_rel_path = os.environ.get('FREECAD_AUTO_REL_PATH', None)
+if _freeCAD_auto_rel_path is None:
+    # Walk up from script directory to find git root
+    _git_root = None
+    _dir_to_check = _script_dir
+    for _i in range(5):  # Check up to 5 levels up
+        if os.path.exists(os.path.join(_dir_to_check, '.git')):
+            _git_root = _dir_to_check
+            break
+        _parent = os.path.dirname(_dir_to_check)
+        if _parent == _dir_to_check:
+            break
+        _dir_to_check = _parent
+    if _git_root is not None:
+        _freeCAD_auto_rel_path = os.path.relpath(_script_dir, _git_root)
+    else:
+        _freeCAD_auto_rel_path = 'FreeCAD_Automation'
+
+# Compute config path relative to script directory (not current working directory)
+CONFIG_PATH:str = os.path.join(_script_dir, _freeCAD_auto_rel_path, 'config.json')
 
 NO_EXTENSION_SUBDIR_NAME:str = 'no_extension'
 
@@ -499,7 +521,8 @@ def main():
     
     # Main Logic
     if args.dir_flag:
-        FCStd_file_path:str = os.path.relpath(args.dir_flag[INPUT_ARG])
+        # Use abspath to resolve paths correctly regardless of CWD
+        FCStd_file_path:str = os.path.abspath(args.dir_flag[INPUT_ARG])
 
         FCStd_dir_path:str = get_FCStd_dir_path(FCStd_file_path, config)
 
@@ -509,8 +532,9 @@ def main():
             print(dir_path)
         
     elif args.export_flag:
-        FCStd_file_path:str = os.path.relpath(args.export_flag[INPUT_ARG])
-        FCStd_dir_path:str = os.path.relpath(args.export_flag[OUTPUT_ARG]) if len(args.export_flag) > 1 else None
+        # Use abspath to resolve paths correctly regardless of CWD
+        FCStd_file_path:str = os.path.abspath(args.export_flag[INPUT_ARG])
+        FCStd_dir_path:str = os.path.abspath(args.export_flag[OUTPUT_ARG]) if len(args.export_flag) > 1 else None
         
         if not os.path.exists(FCStd_file_path):
             raise FileNotFoundError(f"ERR: FCStd file '{FCStd_file_path}' does not exist.")
@@ -552,11 +576,14 @@ def main():
         if USER_RUNNING_LINUX_OS: os.sync()
 
     elif args.import_flag:
-        FCStd_dir_path:str = os.path.relpath(args.import_flag[INPUT_ARG])
-        FCStd_file_path:str = os.path.relpath(args.import_flag[OUTPUT_ARG]) if len(args.import_flag) > 1 else None
+        # Use abspath to resolve paths correctly regardless of CWD
+        FCStd_dir_path:str = os.path.abspath(args.import_flag[INPUT_ARG])
+        FCStd_file_path:str = os.path.abspath(args.import_flag[OUTPUT_ARG]) if len(args.import_flag) > 1 else None
         
         if config_provided:
-            FCStd_file_path:str = FCStd_dir_path
+            # When config is provided, FCStd_dir_path is the input (uncompressed dir),
+            # and we need to derive FCStd_file_path from it
+            FCStd_file_path:str = FCStd_dir_path  # Will be overwritten by get_FCStd_dir_path
             FCStd_dir_path:str = get_FCStd_dir_path(FCStd_file_path, config)
             
         if not os.path.exists(FCStd_dir_path):

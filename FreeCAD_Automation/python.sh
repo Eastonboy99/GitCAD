@@ -8,8 +8,17 @@ FAIL=1
 TRUE=0
 FALSE=1
 
-# Config file path
-CONFIG_FILE="FreeCAD_Automation/config.json"
+# Config file path - detect FreeCAD_Automation directory dynamically
+if [ -z "$FREECAD_AUTO_REL_PATH" ]; then
+    git_repo_root="$(GIT_COMMAND="rev-parse" git rev-parse --show-toplevel 2>/dev/null)"
+    if [ -n "$git_repo_root" ]; then
+        FREECAD_AUTO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        FREECAD_AUTO_REL_PATH="$(realpath --relative-to="$git_repo_root" "$FREECAD_AUTO_DIR" 2>/dev/null || echo "FreeCAD_Automation")"
+    else
+        FREECAD_AUTO_REL_PATH="FreeCAD_Automation"
+    fi
+fi
+CONFIG_FILE="${FREECAD_AUTO_REL_PATH:-FreeCAD_Automation}/config.json"
 
 # DESCRIPTION: Function to extract FreeCAD Python path from config file
     # USAGE: `PYTHON_PATH="$(get_freecad_python_path "$CONFIG_FILE")" || exit $FAIL`

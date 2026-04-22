@@ -12,40 +12,62 @@ FALSE=1
 git_repo_root_path="$(GIT_COMMAND="rev-parse" git rev-parse --show-toplevel)"
 if [ "$?" = "$SUCCESS" ]; then
     cd "$git_repo_root_path"
-else 
+else
     echo "Error: Cannot find git repo root dir. Make sure pwd is inside the git repo when calling this script." >&2
     exit $FAIL
 fi
 
-HOOKS=("post-checkout" "post-commit" "post-merge" "post-rewrite" "pre-commit" "pre-push") # Note: This array is used again in the `Setup Git Hooks` section
-USER_SCRIPTS=("activate" "init-repo")
+# Detect the FreeCAD_Automation directory relative to the git repo root
+# This allows the folder to be placed in any subdirectory within the repo
+# Go up one level from the script's directory (e.g., from "FreeCAD_Automation/user_scripts" to "FreeCAD_Automation")
+FREECAD_AUTO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+FREECAD_AUTO_DIR="$(echo "$FREECAD_AUTO_DIR" | sed "s|^${git_repo_root_path}/||")"
+
+# Verify the detected directory is within the git repo
+case "$FREECAD_AUTO_DIR" in
+    ../*|../*../*|../*../*../*|../*../*../*../*|../*../*../*../*../*)
+        echo "Error: FreeCAD_Automation directory '$FREECAD_AUTO_DIR' is not within the git repo root '$git_repo_root_path'." >&2
+        exit $FAIL
+        ;;
+esac
+
+# Build relative paths for use throughout the script
+FREECAD_AUTO_REL_PATH="$FREECAD_AUTO_DIR"  # e.g., "FreeCAD_Automation" or "tools/FreeCAD_Automation"
+# Export so sourced scripts (like utils.sh) can access it
+export FREECAD_AUTO_REL_PATH
+HOOKS=("$FREECAD_AUTO_REL_PATH/hooks/post-checkout" "$FREECAD_AUTO_REL_PATH/hooks/post-commit" "$FREECAD_AUTO_REL_PATH/hooks/post-merge" "$FREECAD_AUTO_REL_PATH/hooks/post-rewrite" "$FREECAD_AUTO_REL_PATH/hooks/pre-commit" "$FREECAD_AUTO_REL_PATH/hooks/pre-push")
+USER_SCRIPTS=("$FREECAD_AUTO_REL_PATH/user_scripts/activate" "$FREECAD_AUTO_REL_PATH/user_scripts/init-repo")
+
+echo $FREECAD_AUTO_REL_PATH
 
 if [[ "${OSTYPE^^}" == "LINUX-GNU"* ]]; then
     echo "=============================================================================================="
     echo "                                    Set Linux Permissions"
     echo "=============================================================================================="
     
-    if ! find ./FreeCAD_Automation -name "*.sh" -type f -exec chmod 755 {} \; 2>/dev/null; then
+    if ! find "./$FREECAD_AUTO_REL_PATH" -name "*.sh" -type f -exec chmod 755 {} \; 2>/dev/null; then
         echo "Error: Permission denied for chmod on scripts. Please run this script with sudo." >&2
         exit $FAIL
     fi
 
     # Make git wrapper executable
-    if ! chmod 755 "FreeCAD_Automation/git" 2>/dev/null; then
+    if ! chmod 755 "$FREECAD_AUTO_REL_PATH/git" 2>/dev/null; then
         echo "Error: Permission denied for chmod on git wrapper. Please run this script with sudo." >&2
         exit $FAIL
     fi
 
     for hook in "${HOOKS[@]}"; do
-        if ! chmod 755 "FreeCAD_Automation/hooks/$hook" 2>/dev/null; then
+        hook_name="$(basename "$hook")"
+        if ! chmod 755 "$FREECAD_AUTO_REL_PATH/hooks/$hook_name" 2>/dev/null; then
             echo "Error: Permission denied for chmod on hooks. Please run this script with sudo." >&2
             exit $FAIL
         fi
     done
 
     for script in "${USER_SCRIPTS[@]}"; do
-        if ! chmod 755 "FreeCAD_Automation/user_scripts/$script" 2>/dev/null; then
-            echo "Error: Permission denied for chmod on '$script'." >&2
+        script_name="$(basename "$script")"
+        if ! chmod 755 "$FREECAD_AUTO_REL_PATH/user_scripts/$script_name" 2>/dev/null; then
+            echo "Error: Permission denied for chmod on '$script_name'." >&2
             echo "       Please run this script with sudo." >&2
             exit $FAIL
         fi
@@ -69,11 +91,12 @@ elif [[ "${OSTYPE^^}" == "CYGWIN"* || "${OSTYPE^^}" == "MSYS"* || "${OSTYPE^^}" 
     echo "=============================================================================================="
     echo "                                   Set Windows Permissions"
     echo "=============================================================================================="
-    if ! powershell.exe -Command 'Get-ChildItem -Path ".\FreeCAD_Automation" -Recurse | Unblock-File'; then
+    freeCAD_escaped="$(echo "$FREECAD_AUTO_REL_PATH" | sed 's/[\/&]/\\&/g')"
+    if ! powershell.exe -Command "Get-ChildItem -Path '.\$freeCAD_escaped' -Recurse | Unblock-File"; then
         echo "Error: Couldn't unblock scripts!" >&2
         exit $FAIL
     fi
-    echo "Unblocked all files in '.\FreeCAD_Automation'."
+    echo "Unblocked all files in '.\$freeCAD_escaped'."
 fi
 
 echo "=============================================================================================="
@@ -109,9 +132,9 @@ DEFAULT_CONFIG=$(cat <<EOF
 EOF
 )
 
-if [ ! -f "FreeCAD_Automation/config.json" ]; then
-    echo "$DEFAULT_CONFIG" > "FreeCAD_Automation/config.json"
-    echo "Created config file: FreeCAD_Automation/config.json" >&2
+if [ ! -f "$FREECAD_AUTO_REL_PATH/config.json" ]; then
+    echo "$DEFAULT_CONFIG" > "$FREECAD_AUTO_REL_PATH/config.json"
+    echo "Created config file: $FREECAD_AUTO_REL_PATH/config.json" >&2
     echo >&2
     echo ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> USER ACTION REQUESTED <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<" >&2
     echo "1. Please define 'freecad-python-instance-path' key in config.json" >&2
@@ -141,7 +164,7 @@ GIT_ROOT="$(GIT_COMMAND="rev-parse" git rev-parse --show-toplevel)"
 cd "$GIT_ROOT"
 
 # Import code used in this script
-FUNCTIONS_FILE="FreeCAD_Automation/utils.sh"
+FUNCTIONS_FILE="$FREECAD_AUTO_REL_PATH/utils.sh"
 source "$FUNCTIONS_FILE" --ignore-GitCAD-activation
 
 # Extract Python path
@@ -187,7 +210,7 @@ add_to_gitignore() {
 }
 
 add_to_gitignore "**/__pycache__"
-add_to_gitignore "FreeCAD_Automation/config.json"
+add_to_gitignore "$FREECAD_AUTO_REL_PATH/config.json"
 add_to_gitignore "*.FCBak"
 add_to_gitignore ".fcmod"
 
@@ -201,30 +224,31 @@ if [ ! -d "$HOOKS_DIR" ]; then
     exit $FAIL
 fi
 
-if [ ! -d "FreeCAD_Automation/hooks" ]; then
-    echo "Error: FreeCAD_Automation/hooks directory not found" >&2
+if [ ! -d "$FREECAD_AUTO_REL_PATH/hooks" ]; then
+    echo "Error: $FREECAD_AUTO_REL_PATH/hooks directory not found" >&2
     exit $FAIL
 fi
 
 # Note: `HOOKS` array is defined in the `Make all bash scripts executable` section at the top of this script
 for hook in "${HOOKS[@]}"; do
-    if [ -f "$HOOKS_DIR/$hook" ]; then
-        echo "Hook $hook already exists in $HOOKS_DIR"
+    hook_name="$(basename "$hook")"
+    if [ -f "$HOOKS_DIR/$hook_name" ]; then
+        echo "Hook $hook_name already exists in $HOOKS_DIR"
         read -p "  - Do you want to overwrite it? (y/n): " -n 1 -r
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
-            cp "FreeCAD_Automation/hooks/$hook" "$HOOKS_DIR/$hook"
-            chmod +x "$HOOKS_DIR/$hook"
-            echo "    Installed $hook hook"
+            cp "$FREECAD_AUTO_REL_PATH/hooks/$hook_name" "$HOOKS_DIR/$hook_name"
+            chmod +x "$HOOKS_DIR/$hook_name"
+            echo "    Installed $hook_name hook"
             echo
         else
-            echo "    Skipping $hook"
+            echo "    Skipping $hook_name"
             echo
         fi
     else
-        cp "FreeCAD_Automation/hooks/$hook" "$HOOKS_DIR/$hook"
-        chmod +x "$HOOKS_DIR/$hook"
-        echo "Installed $hook hook"
+        cp "$FREECAD_AUTO_REL_PATH/hooks/$hook_name" "$HOOKS_DIR/$hook_name"
+        chmod +x "$HOOKS_DIR/$hook_name"
+        echo "Installed $hook_name hook"
         echo
     fi
 done
@@ -406,7 +430,7 @@ setup_filter_gitattribute() {
 }
 
 # Add FCStd filters
-setup_git_FCStd_filter "clean" "./FreeCAD_Automation/FCStd-clean-filter.sh %f" "This makes git see .FCStd files as being empty and decompresses added .FCStd files"
+setup_git_FCStd_filter "clean" "./$FREECAD_AUTO_REL_PATH/FCStd-clean-filter.sh %f" "This makes git see .FCStd files as being empty and decompresses added .FCStd files"
 setup_git_FCStd_filter "smudge" "cat" "Disabled smudge filter" # Required requires both clean and smudge be defined else it will always error out.
 setup_git_FCStd_filter "required" "true" "If clean/smudge filter fails, undo add operation."
 
@@ -468,18 +492,18 @@ setup_git_alias() {
     fi
 }
 
-setup_git_alias "fcmod" "!bash FreeCAD_Automation/git_aliases/clear-FCStd-modification.sh \"\${GIT_PREFIX}\"" "Clears passed FCStd file modification making git think it's empty."
+setup_git_alias "fcmod" "!bash \"$FREECAD_AUTO_REL_PATH/git_aliases/clear-FCStd-modification.sh\" \"\${GIT_PREFIX}\"" "Clears passed FCStd file modification making git think it's empty."
 setup_git_alias "fadd" "!GIT_COMMAND=\"add\" git add" "Allows FCStd clean filter to export \`.FCStd\` files."
 # setup_git_alias "stat" "!GIT_COMMAND=\"status\" git status" "Lets clean filter know that status call triggered it, leave .FCStd files untouched and don't clear their modification flag." # Note: See note in *) case of clear-FCStd-modification.sh for more information.
-setup_git_alias "fco" "!bash FreeCAD_Automation/git_aliases/checkout-FCStd-files.sh \"\${GIT_PREFIX}\"" "Adds \`git fco\` as alias to run checkout-FCStd-files.sh"
-setup_git_alias "lock" "!bash FreeCAD_Automation/git_aliases/lock.sh \"\${GIT_PREFIX}\"" "Adds \`git lock\` as alias to run lock.sh"
-setup_git_alias "unlock" "!bash FreeCAD_Automation/git_aliases/unlock.sh \"\${GIT_PREFIX}\"" "Adds \`git unlock\` as alias to run unlock.sh"
+setup_git_alias "fco" "!bash \"$FREECAD_AUTO_REL_PATH/git_aliases/checkout-FCStd-files.sh\" \"\${GIT_PREFIX}\"" "Adds \`git fco\` as alias to run checkout-FCStd-files.sh"
+setup_git_alias "lock" "!bash \"$FREECAD_AUTO_REL_PATH/git_aliases/lock.sh\" \"\${GIT_PREFIX}\"" "Adds \`git lock\` as alias to run lock.sh"
+setup_git_alias "unlock" "!bash \"$FREECAD_AUTO_REL_PATH/git_aliases/unlock.sh\" \"\${GIT_PREFIX}\"" "Adds \`git unlock\` as alias to run unlock.sh"
 setup_git_alias "locks" "lfs locks" "1 to 1 alias for \`git lfs locks\`"
-setup_git_alias "ftool" "!bash FreeCAD_Automation/git_aliases/FCStd-file-tool.sh \"\${GIT_PREFIX}\"" "Adds \`git ftool\` as alias to run FCStdFileTool.py"
-setup_git_alias "fimport" "!bash FreeCAD_Automation/git_aliases/FCStd-file-tool.sh \"\${GIT_PREFIX}\" --fimport" "Adds \`git fimport\` as alias to run FCStdFileTool.py with preset import args"
-setup_git_alias "fexport" "!bash FreeCAD_Automation/git_aliases/FCStd-file-tool.sh \"\${GIT_PREFIX}\" --fexport" "Adds \`git fexport\` as alias to run FCStdFileTool.py with preset export args"
-setup_git_alias "fstash" "!bash FreeCAD_Automation/git_aliases/git-stash-and-sync-FCStd-files.sh \"\${GIT_PREFIX}\"" "Adds \`git fstash\` as alias to run git-stash-and-sync-FCStd-files.sh"
-setup_git_alias "freset" "!bash FreeCAD_Automation/git_aliases/git-reset-and-sync-FCStd-files.sh" "Adds \`git freset\` as alias to run git-reset-and-sync-FCStd-files.sh"
+setup_git_alias "ftool" "!bash \"$FREECAD_AUTO_REL_PATH/git_aliases/FCStd-file-tool.sh\" \"\${GIT_PREFIX}\"" "Adds \`git ftool\` as alias to run FCStdFileTool.py"
+setup_git_alias "fimport" "!bash \"$FREECAD_AUTO_REL_PATH/git_aliases/FCStd-file-tool.sh\" \"\${GIT_PREFIX}\" --fimport" "Adds \`git fimport\` as alias to run FCStdFileTool.py with preset import args"
+setup_git_alias "fexport" "!bash \"$FREECAD_AUTO_REL_PATH/git_aliases/FCStd-file-tool.sh\" \"\${GIT_PREFIX}\" --fexport" "Adds \`git fexport\` as alias to run FCStdFileTool.py with preset export args"
+setup_git_alias "fstash" "!bash \"$FREECAD_AUTO_REL_PATH/git_aliases/git-stash-and-sync-FCStd-files.sh\" \"\${GIT_PREFIX}\"" "Adds \`git fstash\` as alias to run git-stash-and-sync-FCStd-files.sh"
+setup_git_alias "freset" "!bash \"$FREECAD_AUTO_REL_PATH/git_aliases/git-reset-and-sync-FCStd-files.sh\"" "Adds \`git freset\` as alias to run git-reset-and-sync-FCStd-files.sh"
 
 echo "=============================================================================================="
 echo "                               Synchronizing \`.FCStd\` Files"

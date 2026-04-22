@@ -7,6 +7,7 @@
 # ==============================================================================================
 #                                  Call init-repo with Git Bash
 # ==============================================================================================
-& "FreeCAD_Automation\bash.ps1" "FreeCAD_Automation/user_scripts/init-repo" @args 
+# Use $PSScriptRoot to make paths work regardless of where FreeCAD_Automation is placed
+& "$PSScriptRoot\..\bash.ps1" "$PSScriptRoot\init-repo" @args 
 
 exit $SUCCESS
